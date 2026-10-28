@@ -1,0 +1,36 @@
+# ==============================================================================
+# Ambient Nursing Ally (ANA) — Complete Requirements Manifest
+# ==============================================================================
+
+# Core Deep Learning & Audio Processing (Tier 1)
+torch>=2.5.0
+torchaudio>=2.5.0
+openai-whisper>=20250625
+soundfile>=0.14.0
+
+# NLP, NER & Privacy Redaction (Tier 2)
+presidio-analyzer>=2.2.365
+presidio-anonymizer>=2.2.365
+spacy>=3.8.0
+pydantic>=2.10.0
+openai>=1.40.0
+
+# Retrieval-Augmented Generation (Tier 3)
+faiss-cpu>=1.9.0
+rank-bm25>=0.2.2
+sentence-transformers>=3.0.0
+transformers>=4.45.0
+numpy>=1.26.0
+
+# Agentic Orchestration & State Machine (Tier 4)
+langgraph>=0.2.0
+langgraph-checkpoint>=2.0.0
+langchain-core>=0.3.0
+requests>=2.32.0
+flask>=3.0.0
+
+# Security, Utility & Formatting (Tier 5 & Infrastructure)
+PyYAML>=6.0.0
+python-dateutil>=2.9.0
+openpyxl>=3.1.0
+pandas>=2.2.0

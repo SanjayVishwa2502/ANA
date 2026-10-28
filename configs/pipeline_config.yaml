@@ -1,0 +1,57 @@
+# ==============================================================================
+# Ambient Nursing Ally (ANA) — System Configuration
+# Design Science Research (DSR) + Agile Methodology
+# ==============================================================================
+
+pipeline:
+  name: "Ambient Nursing Ally (ANA)"
+  version: "1.0.0"
+  shift_context_hours: 12
+  log_level: "INFO"
+
+tier1_perception:
+  sample_rate_hz: 16000
+  vad_model: "snakers4/silero-vad"
+  asr_model_size: "base"
+  fp16: false
+  verbal_error_recovery_enabled: true
+  verbal_markers:
+    - "wait"
+    - "scratch that"
+    - "correction"
+    - "I mean"
+
+tier2_nlp:
+  spacy_model: "en_core_web_sm"
+  confidence_threshold_hitl: 0.85
+  pii_entities:
+    - "PERSON"
+    - "MEDICAL_RECORD_NUMBER"
+    - "PHONE_NUMBER"
+    - "EMAIL_ADDRESS"
+  mrn_regex: "MRN\\s*[-#]?\\s*\\d+"
+  dart_schema:
+    enforce_pydantic: true
+    fallback_offline_extractor: true
+
+tier3_rag:
+  bi_encoder_model: "all-MiniLM-L6-v2"
+  cross_encoder_model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  faiss_metric: "L2"
+  rrf_k: 60
+  temporal_decay_half_life_hours: 6.0
+  top_k_candidates: 3
+
+tier4_agentic:
+  fhir_server_url: "http://127.0.0.1:5001"
+  administrative_scope_only: true
+  samd_classification: "NON_SAMD"
+  mcp_tools:
+    - "lookup_patient_history"
+    - "check_medication_interaction"
+
+tier5_security:
+  hash_algorithm: "SHA-256"
+  zero_phi_onchain: true
+  actor_id_default: "Nurse_Auth_8841"
+  mock_fabric_ledger: true

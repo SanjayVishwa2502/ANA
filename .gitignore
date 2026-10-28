@@ -1,0 +1,11 @@
+# Project documents
+Documents/
+docs/
+
+# Python virtual environments
+venv/
+.venv/
+
+# MIMIC dataset files
+[Mm][Ii][Mm][Ii][Cc]*
+datasets/[Mm][Ii][Mm][Ii][Cc]*
