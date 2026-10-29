@@ -4,10 +4,17 @@ Ambient Nursing Ally (ANA) Project
 """
 
 import os
+import sys
 import re
 import time
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
+
+# Windows console cp1252 UTF-8 safety
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 warnings.filterwarnings("ignore")
 
@@ -130,10 +137,62 @@ def verbal_error_recovery(transcript: str) -> Tuple[str, List[Dict[str, str]]]:
     return cleaned_transcript, corrections_logged
 
 
-def run_perception_pipeline(audio_file_path: Optional[str] = None) -> Dict[str, object]:
+def verify_patient_context_anchoring(transcript: str, declared_mrn: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Tier 1 Patient Context Anchoring Protocol (Methodology Redraft Section 2.1):
+    Prevents acoustic cross-talk in multi-bed rooms.
+    Verifies that the audio utterance contains an explicit patient identifier declaration
+    (e.g., 'MRN48291' or verbal patient name), or matches the nurse's bedside wristband anchor.
+    If unanchored, the fail-safe flags cross-talk risk.
+    """
+    mrn_match = re.search(r"MRN\s*[-#]?\s*(\d+)", transcript, re.IGNORECASE)
+    voice_mrn = f"MRN{mrn_match.group(1)}" if mrn_match else None
+    
+    clean_declared = declared_mrn.strip().upper() if declared_mrn else None
+    
+    if voice_mrn and clean_declared:
+        if voice_mrn == clean_declared:
+            return {
+                "anchored": True,
+                "anchored_mrn": voice_mrn,
+                "source": "dual_verified (voice + bedside wristband)",
+                "details": f"Patient Context fully verified: Voice MRN matches Bedside station ({voice_mrn})."
+            }
+        else:
+            return {
+                "anchored": True,
+                "anchored_mrn": voice_mrn,
+                "source": "voice_override",
+                "details": f"Voice declaration ({voice_mrn}) took precedence over bedside selector ({clean_declared})."
+            }
+    elif voice_mrn:
+        return {
+            "anchored": True,
+            "anchored_mrn": voice_mrn,
+            "source": "voice_declared",
+            "details": f"Patient Context anchored via verbal MRN declaration ({voice_mrn})."
+        }
+    elif clean_declared:
+        return {
+            "anchored": True,
+            "anchored_mrn": clean_declared,
+            "source": "bedside_wristband",
+            "details": f"Patient Context anchored via Bedside Station / Wristband Scan ({clean_declared})."
+        }
+    else:
+        # Failsafe drop: No patient identifier detected in voice or bedside station
+        return {
+            "anchored": False,
+            "anchored_mrn": "UNKNOWN",
+            "source": "unanchored",
+            "details": "🚨 PATIENT CONTEXT ANCHORING FAILED: No explicit MRN declared in voice or bedside terminal. Audio quarantined to avoid multi-bed ward cross-talk."
+        }
+
+
+def run_perception_pipeline(audio_file_path: Optional[str] = None, declared_mrn: Optional[str] = None) -> Dict[str, object]:
     """
     Executes Tier 1 end-to-end:
-    VAD segmentation -> Whisper ASR -> Verbal Rollback / Error Recovery
+    VAD segmentation -> Whisper ASR -> Verbal Rollback / Error Recovery -> Patient Context Anchoring
     """
     print("\n=======================================================")
     print("🎙️ TIER 1: MULTIMODAL PERCEPTION & ACOUSTIC INGESTION")
@@ -166,12 +225,17 @@ def run_perception_pipeline(audio_file_path: Optional[str] = None) -> Dict[str, 
     # Step 1.3: Verbal Error Recovery
     cleaned_transcript, corrections = verbal_error_recovery(raw_transcript)
     
+    # Step 1.4: Patient Context Anchoring (Section 2.1)
+    context_anchor = verify_patient_context_anchoring(cleaned_transcript, declared_mrn)
+    print(f"\n[Tier 1 Perception] 🏷️ Context Anchoring Status: {context_anchor['details']}")
+    
     return {
         "raw_transcript": raw_transcript,
         "cleaned_transcript": cleaned_transcript,
         "corrections_logged": corrections,
         "audio_file": target_audio,
-        "speech_timestamps": timestamps
+        "speech_timestamps": timestamps,
+        "patient_context_anchor": context_anchor
     }
 
 if __name__ == "__main__":

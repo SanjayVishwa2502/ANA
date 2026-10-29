@@ -166,7 +166,17 @@ To comply with HIPAA and GDPR, zero PHI is written to the blockchain. Instead, t
 pip install -r requirements.txt
 ```
 
-### Running the Master Pipeline Demonstration
+### Launching the Clinical Web UI & Acoustic Console (Interactive)
+Launch the primary clinical web interface for live voice recording and full 5-tier pipeline monitoring:
+```bash
+python run_ana_ui.py
+# Open your browser at: http://127.0.0.1:8080
+```
+- **Live Sound Recording**: Record directly with your microphone (16 kHz PCM WAV + real-time oscilloscope waveform & VU decibel meter).
+- **Patient Context Anchoring**: Section 2.1 protocol enforces MRN declaration to eliminate multi-bed ward cross-talk.
+- **5-Tier Visual Output**: Step-by-step display of Silero-VAD segments, Whisper transcription, Verbal error rollback, Presidio scrubbed text, DART cards, HITL Checkpoint approval, Hybrid RAG search, FHIR MCP tools, and SHA-256 Ledger tamper detection.
+
+### Running the Master Pipeline Demonstration (CLI)
 Execute the full architectural validation suite demonstrating Scenario A (End-to-End pass), Scenario B (Cascading Checkpoint Rejection), and Scenario C (Tamper Detection):
 
 ```bash

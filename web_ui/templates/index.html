@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-900">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ambient Nursing Ally (ANA) — Clinical Perception & Pipeline Console</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        clinical: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.4); }
+            50% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.8); }
+        }
+        .recording-glow {
+            animation: pulseGlow 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="h-full text-slate-100 flex flex-col font-sans bg-slate-950">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div class="flex items-center justify-between">
+                <!-- Brand Title -->
+                <div class="flex items-center space-x-3">
+                    <div class="p-2 bg-gradient-to-tr from-blue-600 to-cyan-500 rounded-xl shadow-lg shadow-cyan-500/20">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h1 class="text-lg font-bold text-white tracking-wide">Ambient Nursing Ally (ANA)</h1>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-950 text-cyan-300 border border-cyan-800">DSR Agile v2.1</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Inpatient Clinical Ward Acoustic Scribe & 5-Tier Agentic Architecture</p>
+                    </div>
+                </div>
+
+                <!-- Live Ward Telemetry Badges -->
+                <div class="flex items-center space-x-3">
+                    <div id="edgeCacheGlobalBadge">
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                            <span class="w-2 h-2 mr-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                            🟢 Ward WiFi Synchronized
+                        </span>
+                    </div>
+                    <div class="hidden sm:flex items-center px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-300 font-mono">
+                        <span class="text-slate-500 mr-1.5">Shift:</span>
+                        <span id="headerShiftId">12h-Shift-Ward4B</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Top Section: Audio Ingestion Station (Tier 1 Focus) -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- Left 7 Cols: Acoustic Sensory Ingestion Console -->
+            <div class="lg:col-span-7 bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                        <div class="flex items-center space-x-2">
+                            <span class="p-1.5 rounded-lg bg-blue-900/50 text-blue-400 text-sm">🎙️</span>
+                            <h2 class="text-sm font-bold uppercase tracking-wider text-slate-200">Tier 1: Multimodal Sound Capture</h2>
+                        </div>
+                        <div id="recordingStatus">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                                SENSORY INGESTION READY
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Audio Oscilloscope Waveform Display -->
+                    <div class="mt-4 relative bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+                        <canvas id="waveformCanvas" width="600" height="130" class="w-full h-32 block"></canvas>
+                        
+                        <!-- VU Meter Level Bar -->
+                        <div class="absolute bottom-0 left-0 right-0 h-1 bg-slate-800">
+                            <div id="vuMeterBar" class="h-full bg-cyan-400 transition-all duration-75" style="width: 0%;"></div>
+                        </div>
+
+                        <!-- Timer Overlay -->
+                        <div class="absolute top-2 right-3 font-mono text-xs px-2 py-1 rounded bg-slate-900/80 text-cyan-300 border border-slate-800">
+                            ⏱️ <span id="recordTimer">00:00</span>
+                        </div>
+                    </div>
+
+                    <!-- Input Mode Controls: Microphone | Upload | Presets -->
+                    <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <!-- Mic Button -->
+                        <div class="col-span-1">
+                            <button id="btnRecord" class="w-full py-2.5 px-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-2 shadow-lg shadow-red-600/30 transition-all">
+                                <span class="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+                                <span>Start Dictation</span>
+                            </button>
+                            <button id="btnStop" class="w-full py-2.5 px-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold text-xs hidden flex items-center justify-center space-x-2 shadow-lg transition-all">
+                                <span class="w-2.5 h-2.5 rounded bg-white"></span>
+                                <span>Stop & Encode</span>
+                            </button>
+                        </div>
+
+                        <!-- File Ingest Button -->
+                        <div class="col-span-1 relative">
+                            <label class="w-full py-2.5 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl font-semibold text-xs flex items-center justify-center space-x-2 cursor-pointer transition-all">
+                                <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                <span>Upload Audio</span>
+                                <input type="file" id="audioFileInput" accept="audio/*" class="hidden" />
+                            </label>
+                        </div>
+
+                        <!-- Preset Quick Scenario Button -->
+                        <div class="col-span-1">
+                            <button onclick="document.getElementById('benchmarksModal').classList.remove('hidden')" class="w-full py-2.5 px-3 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/60 text-blue-300 rounded-xl font-semibold text-xs flex items-center justify-center space-x-2 transition-all">
+                                <span>⚡ Select Preset</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- In-Browser Playback Preview Player -->
+                    <div class="mt-3">
+                        <audio id="audioPlayback" controls class="w-full h-8 hidden rounded"></audio>
+                    </div>
+
+                    <!-- Telemetry Metadata Bar -->
+                    <div id="audioTelemetryBadge" class="mt-3">
+                        <div class="text-xs text-slate-500 italic p-2 bg-slate-950/60 rounded-lg border border-slate-800">
+                            Awaiting sound capture via microphone or file upload...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Drag and drop zone hint -->
+                <div id="audioDropZone" class="mt-4 p-3 border border-dashed border-slate-800 rounded-xl text-center text-xs text-slate-500 hover:border-slate-700 transition-all">
+                    Or drop recorded ward audio (.wav, .mp3, .m4a) directly onto this console
+                </div>
+            </div>
+
+            <!-- Right 5 Cols: Patient Context Anchoring & Ward Controls -->
+            <div class="lg:col-span-5 bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl flex flex-col justify-between">
+                <div class="space-y-4">
+                    <div class="pb-3 border-b border-slate-800 flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <span class="p-1.5 rounded-lg bg-cyan-900/50 text-cyan-400 text-sm">🏷️</span>
+                            <h2 class="text-sm font-bold uppercase tracking-wider text-slate-200">Patient Context Anchoring</h2>
+                        </div>
+                        <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Section 2.1 Fail-Safe</span>
+                    </div>
+
+                    <!-- Bedside Wristband MRN Selector -->
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1.5">
+                            Bedside Station / Wristband Scan (MRN Anchor):
+                        </label>
+                        <select id="patientMrnSelect" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
+                            <option value="MRN48291">Jonathan Harker — MRN48291 (Bed-412 Cardiology 4B)</option>
+                            <option value="MRN99104">Lucy Westenra — MRN99104 (Bed-204 General Ward 2A)</option>
+                            <option value="">Auto-Detect from Audio Dictation</option>
+                            <option value="UNANCHORED_TEST">None / Unanchored (Test Fail-Safe Cross-Talk)</option>
+                        </select>
+                        <p class="text-[11px] text-slate-500 mt-1">
+                            Enforces strict data hygiene to avoid multi-bed acoustic cross-talk.
+                        </p>
+                    </div>
+
+                    <!-- System Resilience & HITL Toggles -->
+                    <div class="space-y-2.5 pt-2 border-t border-slate-800">
+                        <div class="flex items-center justify-between p-2.5 bg-slate-950 rounded-xl border border-slate-800">
+                            <div>
+                                <div class="text-xs font-semibold text-slate-200">Offline Edge Caching (AES-256)</div>
+                                <div class="text-[11px] text-slate-500">Buffer audio locally during ward WiFi drop</div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleEdgeBuffering" class="sr-only peer">
+                                <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-600"></div>
+                            </label>
+                        </div>
+
+                        <div class="flex items-center justify-between p-2.5 bg-slate-950 rounded-xl border border-slate-800">
+                            <div>
+                                <div id="rejectionToggleLabel" class="text-xs font-semibold text-slate-200">Cascading HITL Checkpoint</div>
+                                <div class="text-[11px] text-slate-500">Toggle to simulate nurse rejecting note</div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleSimulateRejection" class="sr-only peer">
+                                <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-red-600"></div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Action Execution Button -->
+                <div class="mt-5">
+                    <button id="btnRunPipeline" class="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl font-bold text-sm flex items-center justify-center shadow-lg shadow-cyan-600/20 transition-all">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        ⚡ Process Ingested Audio (Tiers 1-5)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pipeline Execution Flow Tracker -->
+        <div id="pipelineProgressContainer" class="hidden bg-slate-900 rounded-2xl border border-slate-800 p-4 shadow-xl">
+            <div class="flex items-center justify-between max-w-4xl mx-auto">
+                <!-- Step 1 -->
+                <div class="flex flex-col items-center">
+                    <div id="step-indicator-1" class="flex items-center justify-center w-8 h-8 bg-slate-800 text-slate-400 rounded-full font-bold text-xs">1</div>
+                    <span class="text-[11px] text-slate-400 mt-1 font-semibold">Tier 1: Perception</span>
+                </div>
+                <div class="flex-1 h-0.5 bg-slate-800 mx-2"></div>
+                <!-- Step 2 -->
+                <div class="flex flex-col items-center">
+                    <div id="step-indicator-2" class="flex items-center justify-center w-8 h-8 bg-slate-800 text-slate-400 rounded-full font-bold text-xs">2</div>
+                    <span class="text-[11px] text-slate-400 mt-1 font-semibold">Tier 2: NLP & DART</span>
+                </div>
+                <div class="flex-1 h-0.5 bg-slate-800 mx-2"></div>
+                <!-- Step 3 -->
+                <div class="flex flex-col items-center">
+                    <div id="step-indicator-3" class="flex items-center justify-center w-8 h-8 bg-slate-800 text-slate-400 rounded-full font-bold text-xs">3</div>
+                    <span class="text-[11px] text-slate-400 mt-1 font-semibold">HITL Checkpoint</span>
+                </div>
+                <div class="flex-1 h-0.5 bg-slate-800 mx-2"></div>
+                <!-- Step 4 -->
+                <div class="flex flex-col items-center">
+                    <div id="step-indicator-4" class="flex items-center justify-center w-8 h-8 bg-slate-800 text-slate-400 rounded-full font-bold text-xs">4</div>
+                    <span class="text-[11px] text-slate-400 mt-1 font-semibold">Tier 3: Hybrid RAG</span>
+                </div>
+                <div class="flex-1 h-0.5 bg-slate-800 mx-2"></div>
+                <!-- Step 5 -->
+                <div class="flex flex-col items-center">
+                    <div id="step-indicator-5" class="flex items-center justify-center w-8 h-8 bg-slate-800 text-slate-400 rounded-full font-bold text-xs">5</div>
+                    <span class="text-[11px] text-slate-400 mt-1 font-semibold">Tiers 4-5: FHIR & Ledger</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Complete Results Presentation Section -->
+        <div id="pipelineResultsSection" class="hidden space-y-6">
+
+            <!-- Result Header Banner -->
+            <div class="flex items-center justify-between p-4 bg-slate-900 rounded-2xl border border-slate-800">
+                <div class="flex items-center space-x-3">
+                    <div id="resPipelineStatus"></div>
+                    <div>
+                        <div class="text-xs text-slate-400">Master Session ID:</div>
+                        <div id="resSessionId" class="font-mono text-xs font-bold text-cyan-400"></div>
+                    </div>
+                </div>
+                <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">
+                    ↑ New Audio Ingestion
+                </button>
+            </div>
+
+            <!-- TIER 1 DETAILED RESULTS -->
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1 rounded bg-blue-900 text-blue-300 font-bold text-xs">TIER 1</span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Acoustic Ingestion & Perception Engine</h3>
+                    </div>
+                    <span class="text-xs text-slate-400 font-mono">Silero-VAD + Whisper ASR (16kHz)</span>
+                </div>
+
+                <!-- Patient Context Anchoring Status -->
+                <div id="resContextAnchorBadge"></div>
+
+                <!-- VAD Segmentation & Speech vs Noise -->
+                <div id="resVadSegments"></div>
+
+                <!-- Raw Whisper Speech-to-Text -->
+                <div>
+                    <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Raw Whisper ASR Transcription:</div>
+                    <div id="resRawTranscript" class="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-300 leading-relaxed"></div>
+                </div>
+
+                <!-- Verbal Error Recovery Self-Correction Rollback -->
+                <div id="resVerbalRecoveryBox"></div>
+
+                <!-- Post-Correction Cleaned Transcript -->
+                <div>
+                    <div class="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-1">Cleaned Clinical Utterance (Post-Rollback):</div>
+                    <div id="resCleanedTranscript" class="p-3 bg-slate-950 rounded-xl border border-emerald-900/50 text-xs font-mono text-emerald-300 leading-relaxed"></div>
+                </div>
+            </div>
+
+            <!-- TIER 2 DETAILED RESULTS -->
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1 rounded bg-purple-900 text-purple-300 font-bold text-xs">TIER 2</span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Clinical NLP & Privacy De-Identification</h3>
+                    </div>
+                    <!-- Confidence score badge -->
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs text-slate-400">Confidence:</span>
+                        <span id="resConfidenceScore" class="text-xs font-bold font-mono text-cyan-400"></span>
+                        <div class="w-16 h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div id="resConfidenceBar" class="h-full bg-cyan-400"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Presidio De-Identification -->
+                <div>
+                    <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Presidio Scrubbed Text (PII/PHI Anonymized):</div>
+                    <div id="resScrubbedText" class="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-300 leading-relaxed"></div>
+                </div>
+
+                <!-- Schema-Constrained DART Clinical Note -->
+                <div>
+                    <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Schema-Constrained DART Note Structure:</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <!-- Data (D) -->
+                        <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                            <div class="text-xs font-bold text-blue-400 uppercase mb-1.5 flex items-center">
+                                <span class="w-2 h-2 rounded-full bg-blue-400 mr-1.5"></span> [D] Data (Vitals/Symptoms)
+                            </div>
+                            <ul id="dartDataList" class="space-y-1"></ul>
+                        </div>
+                        <!-- Action (A) -->
+                        <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                            <div class="text-xs font-bold text-emerald-400 uppercase mb-1.5 flex items-center">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5"></span> [A] Action (Interventions)
+                            </div>
+                            <ul id="dartActionList" class="space-y-1"></ul>
+                        </div>
+                        <!-- Response (R) -->
+                        <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                            <div class="text-xs font-bold text-amber-400 uppercase mb-1.5 flex items-center">
+                                <span class="w-2 h-2 rounded-full bg-amber-400 mr-1.5"></span> [R] Response (Diagnostics)
+                            </div>
+                            <ul id="dartResponseList" class="space-y-1"></ul>
+                        </div>
+                        <!-- Teaching (T) -->
+                        <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                            <div class="text-xs font-bold text-cyan-400 uppercase mb-1.5 flex items-center">
+                                <span class="w-2 h-2 rounded-full bg-cyan-400 mr-1.5"></span> [T] Teaching / Plan
+                            </div>
+                            <ul id="dartTeachingList" class="space-y-1"></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHECKPOINT: CASCADING ERROR ISOLATION (HITL) -->
+            <div id="resCheckpointPanel" class="p-4 rounded-2xl shadow-xl transition-all"></div>
+
+            <!-- TIER 3: HYBRID RAG -->
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1 rounded bg-amber-900 text-amber-300 font-bold text-xs">TIER 3</span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Historical Knowledge & Hybrid RAG Engine</h3>
+                    </div>
+                    <span class="text-xs text-slate-400 font-mono">BM25 + FAISS Dense + RRF (k=60)</span>
+                </div>
+                <div id="resTier3Container"></div>
+            </div>
+
+            <!-- TIER 4: AGENTIC FHIR -->
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1 rounded bg-indigo-900 text-indigo-300 font-bold text-xs">TIER 4</span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Agentic Orchestration & Smart-on-FHIR Tools</h3>
+                    </div>
+                    <span class="text-xs text-slate-400 font-mono">Model Context Protocol (MCP)</span>
+                </div>
+                <div id="resTier4Container"></div>
+            </div>
+
+            <!-- TIER 5: BLOCKCHAIN SECURITY & TAMPER TESTER -->
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <div class="flex items-center space-x-2">
+                        <span class="p-1 rounded bg-emerald-900 text-emerald-300 font-bold text-xs">TIER 5</span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Cryptographic Security & Provenance Audit</h3>
+                    </div>
+                    <span class="text-xs text-slate-400 font-mono">SHA-256 + Hyperledger Fabric (Raft)</span>
+                </div>
+                <div id="resTier5Container"></div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Modal for Presets / Scenarios -->
+    <div id="benchmarksModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 rounded-2xl border border-slate-700 max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                <h3 class="text-sm font-bold uppercase text-white tracking-wide">Select Clinical Benchmark Scenario</h3>
+                <button onclick="document.getElementById('benchmarksModal').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg">✕</button>
+            </div>
+            <p class="text-xs text-slate-400">
+                Choose a pre-recorded inpatient audio scenario to instantly test acoustic ingestion, verbal self-correction rollback, and cross-talk fail-safes.
+            </p>
+            <div id="benchmarkScenariosList" class="space-y-2.5 max-h-80 overflow-y-auto"></div>
+            <div class="flex justify-end pt-3 border-t border-slate-800">
+                <button onclick="document.getElementById('benchmarksModal').classList.add('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold">
+                    Confirm Selection
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/audio_recorder.js"></script>
+    <script src="/static/js/pipeline_runner.js"></script>
+</body>
+</html>
+

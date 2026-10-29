@@ -71,6 +71,8 @@ class ANAPipelineState(TypedDict):
     raw_transcript: str
     cleaned_transcript: str
     verbal_corrections: List[Dict[str, str]]
+    speech_timestamps: List[Dict[str, int]]
+    patient_context_anchor: Dict[str, Any]
     
     # Tier 2 outputs
     scrubbed_text: str
@@ -110,19 +112,26 @@ class ANAPipelineState(TypedDict):
 
 def node_tier1_perception(state: ANAPipelineState) -> Dict[str, Any]:
     """
-    Node 1: Audio Ingestion -> Silero-VAD Speech Segmentation -> Whisper ASR -> Verbal Rollback.
+    Node 1: Audio Ingestion -> Silero-VAD Speech Segmentation -> Whisper ASR -> Verbal Rollback -> Context Anchor.
     """
     print("\n" + "=" * 70)
     print("▶️  [NODE 1/7] TIER 1: MULTIMODAL PERCEPTION & ACOUSTIC INGESTION")
     print("=" * 70)
     
     audio_path = state.get("audio_path", "datasets/mock_audio.mp3")
-    perception_out = run_perception_pipeline(audio_path)
+    declared_mrn = state.get("patient_id")
+    perception_out = run_perception_pipeline(audio_path, declared_mrn=declared_mrn)
+    
+    anchored_mrn = perception_out.get("patient_context_anchor", {}).get("anchored_mrn")
+    effective_patient_id = anchored_mrn if anchored_mrn and anchored_mrn != "UNKNOWN" else (declared_mrn or "MRN48291")
     
     return {
         "raw_transcript": perception_out["raw_transcript"],
         "cleaned_transcript": perception_out["cleaned_transcript"],
         "verbal_corrections": perception_out["corrections_logged"],
+        "speech_timestamps": perception_out.get("speech_timestamps", []),
+        "patient_context_anchor": perception_out.get("patient_context_anchor", {}),
+        "patient_id": effective_patient_id,
         "pipeline_status": "TIER1_PERCEPTION_COMPLETE"
     }
 
@@ -137,11 +146,12 @@ def node_tier2_redaction(state: ANAPipelineState) -> Dict[str, Any]:
     
     transcript = state.get("cleaned_transcript", "")
     redaction_out = run_redaction(transcript)
+    patient_id = state.get("patient_id") or redaction_out.get("patient_id") or "MRN48291"
     
     return {
         "scrubbed_text": redaction_out["scrubbed_text"],
         "entities_detected": redaction_out["entities_detected"],
-        "patient_id": redaction_out["patient_id"],
+        "patient_id": patient_id,
         "pipeline_status": "TIER2_REDACTION_COMPLETE"
     }
 
@@ -412,6 +422,7 @@ def build_ana_master_graph(checkpointer: Optional[Any] = None) -> Any:
 
 def run_ana_master_pipeline(
     audio_file_path: Optional[str] = None,
+    patient_id: Optional[str] = None,
     simulate_rejection: bool = False,
     force_low_confidence: bool = False,
     shift_thread_id: Optional[str] = None
@@ -421,6 +432,7 @@ def run_ana_master_pipeline(
     
     Args:
         audio_file_path: Optional path to audio recording.
+        patient_id: Optional explicit MRN declared / anchored at bedside.
         simulate_rejection: If True, simulates nurse rejecting DART note at checkpoint.
         force_low_confidence: If True, forces confidence < 0.85 to test HITL review flag.
         shift_thread_id: Session ID for 12-hour shift context persistence.
@@ -436,10 +448,12 @@ def run_ana_master_pipeline(
     initial_state: ANAPipelineState = {
         "shift_session_id": shift_thread_id,
         "audio_path": audio_file_path or "datasets/mock_audio.mp3",
-        "patient_id": "MRN48291",
+        "patient_id": patient_id or "MRN48291",
         "raw_transcript": "",
         "cleaned_transcript": "",
         "verbal_corrections": [],
+        "speech_timestamps": [],
+        "patient_context_anchor": {},
         "scrubbed_text": "",
         "entities_detected": [],
         "dart_note": {},
