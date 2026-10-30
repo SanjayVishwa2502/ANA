@@ -8,4 +8,6 @@ venv/
 
 # MIMIC dataset files
 [Mm][Ii][Mm][Ii][Cc]*
-datasets/[Mm][Ii][Mm][Ii][Cc]*
+
+# Local and synthetic datasets
+datasets/

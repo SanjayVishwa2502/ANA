@@ -66,8 +66,8 @@
                         </span>
                     </div>
                     <div class="hidden sm:flex items-center px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-300 font-mono">
-                        <span class="text-slate-500 mr-1.5">Shift:</span>
-                        <span id="headerShiftId">12h-Shift-Ward4B</span>
+                        <span class="text-slate-500 mr-1.5">Staff:</span>
+                        <span id="headerStaffName">Staff name required</span>
                     </div>
                 </div>
             </div>
@@ -110,8 +110,8 @@
                         </div>
                     </div>
 
-                    <!-- Input Mode Controls: Microphone | Upload | Presets -->
-                    <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <!-- Input Mode Controls: Microphone | Upload | Text -->
+                    <div id="audioInputControls" class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <!-- Mic Button -->
                         <div class="col-span-1">
                             <button id="btnRecord" class="w-full py-2.5 px-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-xs flex items-center justify-center space-x-2 shadow-lg shadow-red-600/30 transition-all">
@@ -135,11 +135,35 @@
                             </label>
                         </div>
 
-                        <!-- Preset Quick Scenario Button -->
+                        <!-- Direct Text Entry Button -->
                         <div class="col-span-1">
-                            <button onclick="document.getElementById('benchmarksModal').classList.remove('hidden')" class="w-full py-2.5 px-3 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/60 text-blue-300 rounded-xl font-semibold text-xs flex items-center justify-center space-x-2 transition-all">
-                                <span>⚡ Select Preset</span>
+                            <button id="btnTextMode" type="button" class="w-full py-2.5 px-3 bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-700/60 text-indigo-300 rounded-xl font-semibold text-xs flex items-center justify-center space-x-2 transition-all">
+                                <span>⌨️ Text Entry</span>
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- Direct Text Entry Flow -->
+                    <div id="textModePanel" class="hidden mt-4 p-4 rounded-xl border border-indigo-800/70 bg-indigo-950/20 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div class="text-xs font-bold uppercase tracking-wider text-indigo-300">Direct Text Entry</div>
+                            <button id="btnExitTextMode" type="button" class="text-[11px] text-slate-400 hover:text-white">Use audio instead</button>
+                        </div>
+                        <div id="textModeMrnStep">
+                            <label for="textModeMrnInput" class="block text-xs font-semibold text-slate-300 mb-1.5">Step 1: Enter or scan MRN</label>
+                            <div class="flex gap-2">
+                                <input id="textModeMrnInput" type="text" inputmode="numeric" autocomplete="off"
+                                    placeholder="MRN48291 or barcode scan"
+                                    class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500" />
+                                <button id="btnTextMrnContinue" type="button" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white">Continue</button>
+                            </div>
+                            <div id="textModeMrnStatus" class="text-[11px] text-slate-500 mt-1">MRN is collected before the clinical text.</div>
+                        </div>
+                        <div id="textModeEntryStep" class="hidden">
+                            <label for="textModeTextInput" class="block text-xs font-semibold text-slate-300 mb-1.5">Step 2: Enter clinical text</label>
+                            <textarea id="textModeTextInput" rows="4" placeholder="Enter the clinical observation, intervention, response, or teaching..."
+                                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"></textarea>
+                            <button id="btnTextModeSubmit" type="button" class="mt-2 w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs">Process Text (Skip Transcription)</button>
                         </div>
                     </div>
 
@@ -173,19 +197,26 @@
                         <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Section 2.1 Fail-Safe</span>
                     </div>
 
-                    <!-- Bedside Wristband MRN Selector -->
+                    <!-- Barcode scanner / spoken MRN anchor -->
                     <div>
+                        <label for="staffNameInput" class="block text-xs font-semibold text-slate-300 mb-1.5">Staff Name:</label>
+                        <input id="staffNameInput" type="text" autocomplete="name" placeholder="Enter submitting staff name"
+                            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 mb-3" />
                         <label class="block text-xs font-semibold text-slate-300 mb-1.5">
-                            Bedside Station / Wristband Scan (MRN Anchor):
+                            Wristband Barcode Scan (MRN Anchor):
                         </label>
-                        <select id="patientMrnSelect" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500">
-                            <option value="MRN48291">Jonathan Harker — MRN48291 (Bed-412 Cardiology 4B)</option>
-                            <option value="MRN99104">Lucy Westenra — MRN99104 (Bed-204 General Ward 2A)</option>
-                            <option value="">Auto-Detect from Audio Dictation</option>
-                            <option value="UNANCHORED_TEST">None / Unanchored (Test Fail-Safe Cross-Talk)</option>
-                        </select>
+                        <div class="flex gap-2">
+                            <input id="patientMrnInput" type="text" inputmode="numeric" autocomplete="off"
+                                placeholder="Scan barcode, then speak the same MRN"
+                                class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500" />
+                            <button id="clearMrnButton" type="button"
+                                class="px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-300 hover:bg-slate-700">
+                                Clear
+                            </button>
+                        </div>
+                        <div id="mrnScanStatus" class="text-[11px] text-slate-500 mt-1">Scanner input is accepted as keyboard text; VLM is not used.</div>
                         <p class="text-[11px] text-slate-500 mt-1">
-                            Enforces strict data hygiene to avoid multi-bed acoustic cross-talk.
+                            The scanned MRN is only accepted when the same MRN is also present in the transcript.
                         </p>
                     </div>
 
@@ -270,8 +301,8 @@
                 <div class="flex items-center space-x-3">
                     <div id="resPipelineStatus"></div>
                     <div>
-                        <div class="text-xs text-slate-400">Master Session ID:</div>
-                        <div id="resSessionId" class="font-mono text-xs font-bold text-cyan-400"></div>
+                        <div class="text-xs text-slate-400">Staff Name:</div>
+                        <div id="resStaffName" class="font-mono text-xs font-bold text-cyan-400"></div>
                     </div>
                 </div>
                 <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">
@@ -412,28 +443,8 @@
         </div>
     </main>
 
-    <!-- Modal for Presets / Scenarios -->
-    <div id="benchmarksModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-slate-900 rounded-2xl border border-slate-700 max-w-xl w-full p-6 shadow-2xl space-y-4">
-            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
-                <h3 class="text-sm font-bold uppercase text-white tracking-wide">Select Clinical Benchmark Scenario</h3>
-                <button onclick="document.getElementById('benchmarksModal').classList.add('hidden')" class="text-slate-400 hover:text-white text-lg">✕</button>
-            </div>
-            <p class="text-xs text-slate-400">
-                Choose a pre-recorded inpatient audio scenario to instantly test acoustic ingestion, verbal self-correction rollback, and cross-talk fail-safes.
-            </p>
-            <div id="benchmarkScenariosList" class="space-y-2.5 max-h-80 overflow-y-auto"></div>
-            <div class="flex justify-end pt-3 border-t border-slate-800">
-                <button onclick="document.getElementById('benchmarksModal').classList.add('hidden')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold">
-                    Confirm Selection
-                </button>
-            </div>
-        </div>
-    </div>
-
     <!-- Scripts -->
     <script src="/static/js/audio_recorder.js"></script>
     <script src="/static/js/pipeline_runner.js"></script>
 </body>
 </html>
-

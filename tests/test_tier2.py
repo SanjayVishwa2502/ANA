@@ -11,9 +11,8 @@ class TestTier2NLP(unittest.TestCase):
     def test_pii_redaction(self):
         text = "Patient Jonathan Harker, MRN48291 presented with acute diaphoresis."
         result = run_redaction(text)
-        self.assertNotIn("MRN48291", result["scrubbed_text"])
+        self.assertIn("MRN48291", result["scrubbed_text"])
         self.assertEqual(result["patient_id"], "MRN48291")
-        self.assertIn("<MEDICAL_RECORD_NUMBER>", result["scrubbed_text"])
 
     def test_dart_schema_validation(self):
         sample = (
@@ -27,6 +26,13 @@ class TestTier2NLP(unittest.TestCase):
         self.assertFalse(validated.requires_manual_flag)
         self.assertTrue(len(validated.data) > 0)
         self.assertTrue(len(validated.action) > 0)
+
+    def test_nonclinical_utterance_is_not_filled_with_care_actions(self):
+        dart = format_to_dart_schema("HI.")
+        self.assertEqual(dart["data"], [])
+        self.assertEqual(dart["action"], [])
+        self.assertTrue(dart["requires_manual_flag"])
+        self.assertLess(dart["confidence_score"], 0.85)
 
     def test_clinical_chunking(self):
         sample = (

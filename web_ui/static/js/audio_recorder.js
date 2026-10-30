@@ -403,32 +403,6 @@ class ANAAudioRecorder {
         }
     }
     
-    selectBenchmarkScenario(scenario) {
-        this.currentAudioPayload = {
-            filename: scenario.file_path,
-            relative_path: scenario.file_path,
-            duration_sec: 28.5,
-            size_kb: 708.6
-        };
-        
-        if (this.audioPlayer) {
-            this.audioPlayer.src = `/api/audio/${scenario.file_path.split('/').pop()}`;
-            this.audioPlayer.classList.remove("hidden");
-        }
-        
-        // Auto-set MRN selector
-        const mrnInput = document.getElementById("patientMrnSelect");
-        if (mrnInput && scenario.patient_id) {
-            mrnInput.value = scenario.patient_id;
-        }
-        
-        this.updateTelemetryUI({
-            filename: scenario.title,
-            duration_sec: "28.5 (benchmark)",
-            sample_rate: 16000,
-            size_kb: 708.6
-        });
-    }
 }
 
 // Global instance
@@ -436,4 +410,3 @@ window.anaRecorder = null;
 document.addEventListener("DOMContentLoaded", () => {
     window.anaRecorder = new ANAAudioRecorder();
 });
-

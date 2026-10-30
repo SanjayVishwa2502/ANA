@@ -40,6 +40,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
 # Tier Imports
 from tier1_perception.audio_pipeline import run_perception_pipeline
+from tier1_perception.audio_pipeline import verbal_error_recovery, verify_patient_context_anchoring
+from mrn_utils import normalize_mrn
 from tier2_nlp.redaction_pipeline import run_redaction
 from tier2_nlp.dart_pipeline import format_to_dart_schema, DARTNote
 from tier2_nlp.chunking_pipeline import chunk_clinical_note
@@ -64,8 +66,11 @@ class ANAPipelineState(TypedDict):
     Persisted by MemorySaver across the nurse's 12-hour shift session.
     """
     shift_session_id: str
+    staff_name: str
+    input_mode: str
     audio_path: str
     patient_id: str
+    manual_transcript: str
     
     # Tier 1 outputs
     raw_transcript: str
@@ -118,12 +123,32 @@ def node_tier1_perception(state: ANAPipelineState) -> Dict[str, Any]:
     print("▶️  [NODE 1/7] TIER 1: MULTIMODAL PERCEPTION & ACOUSTIC INGESTION")
     print("=" * 70)
     
-    audio_path = state.get("audio_path", "datasets/mock_audio.mp3")
-    declared_mrn = state.get("patient_id")
+    input_mode = state.get("input_mode", "audio")
+    declared_mrn = normalize_mrn(state.get("patient_id"))
+
+    if input_mode == "text":
+        manual_text = state.get("manual_transcript", "").strip()
+        transcript = f"{declared_mrn}. {manual_text}".strip()
+        cleaned_transcript, corrections = verbal_error_recovery(transcript)
+        context_anchor = verify_patient_context_anchoring(
+            cleaned_transcript,
+            declared_mrn=declared_mrn,
+        )
+        return {
+            "raw_transcript": transcript,
+            "cleaned_transcript": cleaned_transcript,
+            "verbal_corrections": corrections,
+            "speech_timestamps": [],
+            "patient_context_anchor": context_anchor,
+            "patient_id": declared_mrn or "",
+            "pipeline_status": "TIER1_TEXT_INPUT_COMPLETE",
+        }
+
+    audio_path = state.get("audio_path", "")
     perception_out = run_perception_pipeline(audio_path, declared_mrn=declared_mrn)
     
     anchored_mrn = perception_out.get("patient_context_anchor", {}).get("anchored_mrn")
-    effective_patient_id = anchored_mrn if anchored_mrn and anchored_mrn != "UNKNOWN" else (declared_mrn or "MRN48291")
+    effective_patient_id = anchored_mrn if anchored_mrn and anchored_mrn != "UNKNOWN" else ""
     
     return {
         "raw_transcript": perception_out["raw_transcript"],
@@ -146,7 +171,7 @@ def node_tier2_redaction(state: ANAPipelineState) -> Dict[str, Any]:
     
     transcript = state.get("cleaned_transcript", "")
     redaction_out = run_redaction(transcript)
-    patient_id = state.get("patient_id") or redaction_out.get("patient_id") or "MRN48291"
+    patient_id = state.get("patient_id") or ""
     
     return {
         "scrubbed_text": redaction_out["scrubbed_text"],
@@ -191,9 +216,21 @@ def node_cascading_checkpoint(state: ANAPipelineState) -> Dict[str, Any]:
     confidence = state.get("confidence_score", 0.0)
     manual_flag = state.get("requires_manual_flag", False)
     current_approved = state.get("hitl_approved", True)
+    anchor = state.get("patient_context_anchor", {})
     
     print(f"   • Extracted Confidence Score: {confidence:.2f} (Threshold: 0.85)")
     print(f"   • Manual Flag Triggered    : {manual_flag}")
+
+    if not anchor.get("anchored", False):
+        reason = anchor.get("details", "Transcript does not contain a verified MRN.")
+        return {
+            "hitl_approved": False,
+            "hitl_reviewer": "Nurse_Auth_8841",
+            "hitl_timestamp": datetime.now(timezone.utc).isoformat(),
+            "hitl_rejection_reason": reason,
+            "pipeline_status": "ISOLATED_QUARANTINED",
+            "status_summary": f"Quarantined at patient context gate: {reason}"
+        }
     
     # Simulated Nurse Review
     if not current_approved:
@@ -281,7 +318,7 @@ def node_tier4_agentic_mcp(state: ANAPipelineState) -> Dict[str, Any]:
     print("▶️  [NODE 5/7] TIER 4: AGENTIC ORCHESTRATION & MCP FHIR TOOLS")
     print("=" * 70)
     
-    patient_id = state.get("patient_id", "MRN48291")
+    patient_id = state.get("patient_id", "")
     
     # 1. Invoke Tool: lookup_patient_history
     fhir_raw = lookup_patient_history.invoke({"patient_id": patient_id})
@@ -423,6 +460,9 @@ def build_ana_master_graph(checkpointer: Optional[Any] = None) -> Any:
 def run_ana_master_pipeline(
     audio_file_path: Optional[str] = None,
     patient_id: Optional[str] = None,
+    manual_transcript: Optional[str] = None,
+    input_mode: str = "audio",
+    staff_name: str = "Unknown Staff",
     simulate_rejection: bool = False,
     force_low_confidence: bool = False,
     shift_thread_id: Optional[str] = None
@@ -433,10 +473,22 @@ def run_ana_master_pipeline(
     Args:
         audio_file_path: Optional path to audio recording.
         patient_id: Optional explicit MRN declared / anchored at bedside.
+        manual_transcript: Text entered directly by staff when input_mode is ``text``.
+        input_mode: Either ``audio`` or ``text``.
+        staff_name: Name of the staff member submitting the entry.
         simulate_rejection: If True, simulates nurse rejecting DART note at checkpoint.
         force_low_confidence: If True, forces confidence < 0.85 to test HITL review flag.
         shift_thread_id: Session ID for 12-hour shift context persistence.
     """
+    if input_mode not in {"audio", "text"}:
+        raise ValueError("input_mode must be either 'audio' or 'text'")
+    if input_mode == "text" and (
+        not isinstance(manual_transcript, str) or not manual_transcript.strip()
+    ):
+        raise ValueError("manual_transcript is required for text input mode")
+    if input_mode == "text" and not normalize_mrn(patient_id):
+        raise ValueError("A valid MRN is required for text input mode")
+
     if not shift_thread_id:
         shift_thread_id = f"shift_{uuid.uuid4().hex[:8]}"
         
@@ -447,8 +499,11 @@ def run_ana_master_pipeline(
     # Initial State
     initial_state: ANAPipelineState = {
         "shift_session_id": shift_thread_id,
-        "audio_path": audio_file_path or "datasets/mock_audio.mp3",
-        "patient_id": patient_id or "MRN48291",
+        "staff_name": staff_name.strip() or "Unknown Staff",
+        "input_mode": input_mode,
+        "audio_path": audio_file_path or "",
+        "patient_id": normalize_mrn(patient_id) or "",
+        "manual_transcript": manual_transcript or "",
         "raw_transcript": "",
         "cleaned_transcript": "",
         "verbal_corrections": [],

@@ -33,6 +33,7 @@ from tier1_perception.audio_pipeline import (
     run_perception_pipeline,
     verify_patient_context_anchoring
 )
+from mrn_utils import normalize_mrn
 from tier5_security.ledger_audit_pipeline import (
     generate_clinical_hash,
     verify_offchain_integrity,
@@ -49,43 +50,6 @@ UPLOAD_DIR = os.path.join(PROJECT_ROOT, "datasets", "captured_audio")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_DIR
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50MB max upload
-
-# Clinical Benchmark Audio Presets
-BENCHMARK_SCENARIOS = [
-    {
-        "id": "scenario_stemi",
-        "title": "Jonathan Harker (MRN48291) — Acute Anterior STEMI",
-        "category": "Cardiac Emergency & Self-Correction Rollback",
-        "file_path": "datasets/segmented_audio.wav",
-        "patient_id": "MRN48291",
-        "description": "Acute diaphoretic episode, ST elevation in leads V2-V4, verbal self-correction from 10mg to 0.4mg nitroglycerin, heparin bolus."
-    },
-    {
-        "id": "scenario_mock_mp3",
-        "title": "Ward Audio Stream (Standard Clinical Inpatient)",
-        "category": "Standard Inpatient Dictation",
-        "file_path": "datasets/mock_audio.mp3",
-        "patient_id": "MRN48291",
-        "description": "Continuous acoustic recording containing background ward noise, filtered via Silero-VAD."
-    },
-    {
-        "id": "scenario_anemia",
-        "title": "Lucy Westenra (MRN99104) — General Medical Ward",
-        "category": "Cross-Bed Patient Verification",
-        "file_path": "datasets/mock_audio.mp3",
-        "patient_id": "MRN99104",
-        "description": "Routine shift vitals check for microcytic anemia patient with documented latex allergy."
-    },
-    {
-        "id": "scenario_unanchored",
-        "title": "Unanchored Ward Crosstalk Test (Fail-Safe Verification)",
-        "category": "Patient Context Anchoring Fail-Safe",
-        "file_path": "datasets/mock_audio.mp3",
-        "patient_id": "",
-        "description": "Simulates unanchored ambient dictation without declared MRN to verify multi-bed crosstalk prevention."
-    }
-]
-
 
 @app.route("/")
 def index():
@@ -110,12 +74,6 @@ def health():
         },
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
-
-
-@app.route("/api/benchmarks", methods=["GET"])
-def get_benchmarks():
-    """Returns the pre-configured clinical benchmark audio scenarios."""
-    return jsonify(BENCHMARK_SCENARIOS)
 
 
 @app.route("/api/upload_audio", methods=["POST"])
@@ -180,7 +138,7 @@ def upload_audio():
 
 @app.route("/api/audio/<filename>")
 def serve_audio(filename):
-    """Streams captured or benchmark audio back to browser for playback."""
+    """Streams captured audio back to the browser for playback."""
     # Check captured audio first
     captured_file = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     if os.path.exists(captured_file):
@@ -204,27 +162,47 @@ def run_pipeline():
     """
     Executes the full ANA 5-Tier master pipeline on the captured audio.
     Accepts:
-      - audio_path: relative path to audio file (or benchmark scenario path)
-      - patient_id: optional bedside wristband MRN anchor
+      - input_mode: ``audio`` or ``text``
+      - audio_path: relative path to a captured or uploaded audio file
+      - transcript: manual clinical text when input_mode is ``text``
+      - patient_id: barcode scanner MRN or text-mode MRN
+      - staff_name: submitting staff member's name
       - simulate_rejection: bool (tests HITL rejection branch)
       - force_low_confidence: bool (tests confidence flagging)
       - edge_buffering: bool (simulates local offline encrypted edge caching)
     """
     data = request.get_json() or {}
-    audio_path = data.get("audio_path", "datasets/mock_audio.mp3")
-    declared_mrn = data.get("patient_id", "").strip().upper()
+    input_mode = data.get("input_mode", "audio")
+    audio_path = data.get("audio_path", "")
+    manual_transcript = data.get("transcript", "")
+    declared_mrn = data.get("patient_id", "")
+    staff_name = data.get("staff_name", "")
+    if input_mode not in {"audio", "text"}:
+        return jsonify({"success": False, "error": "input_mode must be either 'audio' or 'text'."}), 400
+    if not isinstance(staff_name, str) or not staff_name.strip():
+        return jsonify({"success": False, "error": "Staff name is required."}), 400
+    if not isinstance(declared_mrn, str):
+        declared_mrn = ""
+    declared_mrn = normalize_mrn(declared_mrn)
+    if not declared_mrn:
+        return jsonify({"success": False, "error": "A valid MRN is required."}), 400
     simulate_rejection = bool(data.get("simulate_rejection", False))
     force_low_conf = bool(data.get("force_low_confidence", False))
     edge_buffering = bool(data.get("edge_buffering", False))
 
-    # Resolve full path
-    full_audio_path = os.path.join(PROJECT_ROOT, audio_path)
-    if not os.path.exists(full_audio_path):
-        # Try direct relative path
-        if os.path.exists(audio_path):
-            full_audio_path = audio_path
-        else:
-            full_audio_path = os.path.join(PROJECT_ROOT, "datasets", "mock_audio.mp3")
+    full_audio_path = None
+    if input_mode == "audio":
+        if not isinstance(audio_path, str) or not audio_path.strip():
+            return jsonify({"success": False, "error": "Capture or upload audio before processing."}), 400
+
+        # Resolve full path
+        full_audio_path = os.path.abspath(os.path.join(PROJECT_ROOT, audio_path))
+        if os.path.commonpath([PROJECT_ROOT, full_audio_path]) != PROJECT_ROOT:
+            return jsonify({"success": False, "error": "Audio path must remain inside the project."}), 400
+        if not os.path.isfile(full_audio_path):
+            return jsonify({"success": False, "error": f"Audio file not found: {audio_path}"}), 400
+    elif not isinstance(manual_transcript, str) or not manual_transcript.strip():
+        return jsonify({"success": False, "error": "Clinical text is required for text input mode."}), 400
 
     shift_id = f"shift_{uuid.uuid4().hex[:8]}"
 
@@ -233,6 +211,9 @@ def run_pipeline():
         final_state = run_ana_master_pipeline(
             audio_file_path=full_audio_path,
             patient_id=declared_mrn if declared_mrn else None,
+            manual_transcript=manual_transcript if input_mode == "text" else None,
+            input_mode=input_mode,
+            staff_name=staff_name.strip(),
             simulate_rejection=simulate_rejection,
             force_low_confidence=force_low_conf,
             shift_thread_id=shift_id
@@ -242,6 +223,8 @@ def run_pipeline():
         response_payload = {
             "success": True,
             "shift_session_id": final_state.get("shift_session_id"),
+            "staff_name": final_state.get("staff_name"),
+            "input_mode": final_state.get("input_mode"),
             "pipeline_status": final_state.get("pipeline_status"),
             "status_summary": final_state.get("status_summary"),
             "edge_cached_simulation": {
@@ -336,4 +319,3 @@ if __name__ == "__main__":
     print(f"🌐 Serving Clinical UI locally on: http://127.0.0.1:{port}")
     print("=" * 70)
     app.run(host="127.0.0.1", port=port, debug=False)
-

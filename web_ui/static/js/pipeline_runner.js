@@ -9,18 +9,96 @@ class ANAPipelineRunner {
         this.statusBadge = document.getElementById("pipelineGlobalStatus");
         this.pipelineProgress = document.getElementById("pipelineProgressContainer");
         this.resultsSection = document.getElementById("pipelineResultsSection");
-        this.benchmarkContainer = document.getElementById("benchmarkScenariosList");
-        
         this.lastExecutionData = null;
         
         this.initEventListeners();
-        this.loadBenchmarks();
     }
     
     initEventListeners() {
         if (this.runBtn) {
             this.runBtn.addEventListener("click", () => this.executePipeline());
         }
+
+        const mrnInput = document.getElementById("patientMrnInput");
+        const clearMrnButton = document.getElementById("clearMrnButton");
+        const mrnScanStatus = document.getElementById("mrnScanStatus");
+        if (mrnInput) {
+            mrnInput.addEventListener("input", () => {
+                if (mrnScanStatus) {
+                    mrnScanStatus.textContent = mrnInput.value.trim()
+                        ? "MRN captured. Speak the same MRN in the audio before processing."
+                        : "Scanner input is accepted as keyboard text; VLM is not used.";
+                }
+            });
+        }
+        if (clearMrnButton && mrnInput) {
+            clearMrnButton.addEventListener("click", () => {
+                mrnInput.value = "";
+                mrnInput.dispatchEvent(new Event("input"));
+                mrnInput.focus();
+            });
+        }
+
+        const staffNameInput = document.getElementById("staffNameInput");
+        const headerStaffName = document.getElementById("headerStaffName");
+        if (staffNameInput && headerStaffName) {
+            staffNameInput.addEventListener("input", () => {
+                headerStaffName.textContent = staffNameInput.value.trim() || "Staff name required";
+            });
+        }
+
+        const textModeButton = document.getElementById("btnTextMode");
+        const exitTextModeButton = document.getElementById("btnExitTextMode");
+        const textModeMrnInput = document.getElementById("textModeMrnInput");
+        const textModeMrnContinue = document.getElementById("btnTextMrnContinue");
+        const textModeMrnStep = document.getElementById("textModeMrnStep");
+        const textModeEntryStep = document.getElementById("textModeEntryStep");
+        const textModePanel = document.getElementById("textModePanel");
+        const textModeTextInput = document.getElementById("textModeTextInput");
+        const textModeSubmit = document.getElementById("btnTextModeSubmit");
+
+        const setTextMode = (active) => {
+            if (textModePanel) textModePanel.classList.toggle("hidden", !active);
+            document.getElementById("audioInputControls")?.classList.toggle("hidden", active);
+            document.getElementById("audioDropZone")?.classList.toggle("hidden", active);
+            if (textModeButton) textModeButton.classList.toggle("hidden", active);
+            if (!active) {
+                textModeMrnStep?.classList.remove("hidden");
+                textModeEntryStep?.classList.add("hidden");
+                if (textModeMrnInput) textModeMrnInput.value = "";
+                if (textModeTextInput) textModeTextInput.value = "";
+            } else {
+                textModeMrnInput?.focus();
+            }
+        };
+
+        textModeButton?.addEventListener("click", () => setTextMode(true));
+        exitTextModeButton?.addEventListener("click", () => setTextMode(false));
+        textModeMrnContinue?.addEventListener("click", () => {
+            const normalizedMrn = this.normalizeMrnInput(textModeMrnInput?.value || "");
+            const status = document.getElementById("textModeMrnStatus");
+            if (!normalizedMrn) {
+                if (status) status.textContent = "Enter or scan a valid MRN with at least four digits.";
+                textModeMrnInput?.focus();
+                return;
+            }
+
+            if (document.getElementById("patientMrnInput")) {
+                document.getElementById("patientMrnInput").value = normalizedMrn;
+            }
+            if (status) status.textContent = `MRN ${normalizedMrn} accepted. Enter the clinical text.`;
+            textModeMrnStep?.classList.add("hidden");
+            textModeEntryStep?.classList.remove("hidden");
+            textModeTextInput?.focus();
+        });
+        textModeSubmit?.addEventListener("click", () => {
+            this.executePipeline({
+                inputMode: "text",
+                declaredMrn: textModeMrnInput?.value || "",
+                transcript: textModeTextInput?.value || "",
+                submitButton: textModeSubmit,
+            });
+        });
         
         const simRejectionToggle = document.getElementById("toggleSimulateRejection");
         if (simRejectionToggle) {
@@ -57,65 +135,75 @@ class ANAPipelineRunner {
             });
         }
     }
-    
-    async loadBenchmarks() {
-        if (!this.benchmarkContainer) return;
-        try {
-            const res = await fetch("/api/benchmarks");
-            const scenarios = await res.json();
-            
-            this.benchmarkContainer.innerHTML = "";
-            scenarios.forEach(sc => {
-                const card = document.createElement("div");
-                card.className = "p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer text-left";
-                card.innerHTML = `
-                    <div class="flex items-center justify-between mb-1">
-                        <span class="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">${sc.category}</span>
-                        <span class="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 font-mono text-slate-600 dark:text-slate-300">${sc.patient_id || 'NO_MRN'}</span>
-                    </div>
-                    <div class="text-sm font-semibold text-slate-800 dark:text-slate-100">${sc.title}</div>
-                    <div class="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">${sc.description}</div>
-                `;
-                card.addEventListener("click", () => {
-                    // Highlight selected
-                    document.querySelectorAll("#benchmarkScenariosList > div").forEach(c => c.classList.remove("ring-2", "ring-blue-500"));
-                    card.classList.add("ring-2", "ring-blue-500");
-                    
-                    if (window.anaRecorder) {
-                        window.anaRecorder.selectBenchmarkScenario(sc);
-                    }
-                });
-                this.benchmarkContainer.appendChild(card);
-            });
-        } catch (err) {
-            console.error("Error loading benchmark scenarios:", err);
-        }
+
+    normalizeMrnInput(value) {
+        const digits = value.toUpperCase().replace(/^MRN/, "").replace(/\D/g, "");
+        return digits.length >= 4 ? `MRN${digits}` : "";
+    }
+
+    playOutcomeSound(success) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+
+        const context = new AudioContextClass();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const now = context.currentTime;
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(success ? 660 : 220, now);
+        oscillator.frequency.setValueAtTime(success ? 880 : 150, now + 0.14);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(now);
+        oscillator.stop(now + 0.3);
+        oscillator.addEventListener("ended", () => context.close());
     }
     
-    async executePipeline() {
+    async executePipeline(options = {}) {
         const recorder = window.anaRecorder;
         const currentPayload = recorder ? recorder.currentAudioPayload : null;
-        const audioPath = currentPayload ? currentPayload.relative_path : "datasets/mock_audio.mp3";
+        const inputMode = options.inputMode || "audio";
+        const audioPath = inputMode === "audio" && currentPayload ? currentPayload.relative_path : "";
         
-        const patientMrnSelect = document.getElementById("patientMrnSelect");
-        const declaredMrn = patientMrnSelect ? patientMrnSelect.value : "";
+        const patientMrnInput = document.getElementById("patientMrnInput");
+        const declaredMrn = options.declaredMrn || (patientMrnInput ? patientMrnInput.value.trim() : "");
+        const staffNameInput = document.getElementById("staffNameInput");
+        const staffName = staffNameInput ? staffNameInput.value.trim() : "";
         
         const simRejectionToggle = document.getElementById("toggleSimulateRejection");
         const simulateRejection = simRejectionToggle ? simRejectionToggle.checked : false;
         
         const edgeBufferToggle = document.getElementById("toggleEdgeBuffering");
         const edgeBuffering = edgeBufferToggle ? edgeBufferToggle.checked : false;
+
+        if (!staffName) {
+            alert("Enter the staff name before processing.");
+            return;
+        }
+        if (inputMode === "audio" && !audioPath) {
+            alert("Capture or upload audio before processing.");
+            return;
+        }
+        if (inputMode === "text" && !options.transcript.trim()) {
+            alert("Enter clinical text before processing.");
+            return;
+        }
         
         // Show loading state
-        if (this.runBtn) {
-            this.runBtn.disabled = true;
-            this.runBtn.innerHTML = `
+        const submitButton = options.submitButton || this.runBtn;
+        const originalButtonText = submitButton ? submitButton.innerHTML : "";
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = submitButton === this.runBtn ? `
                 <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
                 Processing 5-Tier Pipeline...
-            `;
+            ` : "Processing...";
         }
         
         if (this.pipelineProgress) this.pipelineProgress.classList.remove("hidden");
@@ -126,8 +214,11 @@ class ANAPipelineRunner {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    input_mode: inputMode,
                     audio_path: audioPath,
                     patient_id: declaredMrn,
+                    transcript: options.transcript || "",
+                    staff_name: staffName,
                     simulate_rejection: simulateRejection,
                     force_low_confidence: false,
                     edge_buffering: edgeBuffering
@@ -136,25 +227,28 @@ class ANAPipelineRunner {
             
             const data = await response.json();
             if (!data.success) {
+                this.playOutcomeSound(false);
                 alert("Pipeline execution failed: " + (data.error || "Unknown server error"));
                 return;
             }
             
             this.lastExecutionData = data;
             this.renderFullPipelineOutput(data);
+            this.playOutcomeSound(data.pipeline_status === "SUCCESS");
             
         } catch (err) {
             console.error("Pipeline invocation error:", err);
+            this.playOutcomeSound(false);
             alert("Network / Execution error: " + err.message);
         } finally {
-            if (this.runBtn) {
-                this.runBtn.disabled = false;
-                this.runBtn.innerHTML = `
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.innerHTML = submitButton === this.runBtn ? `
                     <svg class="w-5 h-5 mr-2 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                     ⚡ Process Ingested Audio (Tiers 1-5)
-                `;
+                ` : originalButtonText;
             }
         }
     }
@@ -190,8 +284,8 @@ class ANAPipelineRunner {
                 : `<span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">✅ 5-TIER PIPELINE EXECUTED</span>`;
         }
         
-        const sessionEl = document.getElementById("resSessionId");
-        if (sessionEl) sessionEl.textContent = data.shift_session_id;
+        const staffEl = document.getElementById("resStaffName");
+        if (staffEl) staffEl.textContent = data.staff_name || "Unknown Staff";
         
         // Complete Step progress
         for (let i = 1; i <= 5; i++) {
@@ -466,7 +560,7 @@ class ANAPipelineRunner {
                 <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
                     <div class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">Smart-on-FHIR Patient Record</div>
                     <div class="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
-                        <div><strong>Patient ID:</strong> <span class="font-mono text-blue-600">${fhir.id || 'MRN48291'}</span></div>
+                        <div><strong>Patient ID:</strong> <span class="font-mono text-blue-600">${fhir.id || 'UNKNOWN'}</span></div>
                         <div><strong>Patient Name:</strong> <span>${fhir.patient_name || (fhir.name && fhir.name[0] ? fhir.name[0].text : 'Jonathan Harker')}</span></div>
                         <div><strong>Ward / Bed:</strong> <span>${fhir.ward || 'Cardiology 4B'} / ${fhir.bed || 'Bed-412'}</span></div>
                         <div><strong>Active Medications:</strong> <span class="font-mono text-xs text-slate-600 dark:text-slate-400">${(fhir.active_medications || []).join(", ")}</span></div>
@@ -573,4 +667,3 @@ window.anaRunner = null;
 document.addEventListener("DOMContentLoaded", () => {
     window.anaRunner = new ANAPipelineRunner();
 });
-

@@ -6,8 +6,9 @@ Ambient Nursing Ally (ANA) Project
 import re
 import warnings
 from typing import Dict, List, Any, Tuple
-from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
+from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
+from mrn_utils import extract_spoken_mrn
 
 warnings.filterwarnings("ignore")
 
@@ -20,15 +21,6 @@ def get_redaction_engines() -> Tuple[AnalyzerEngine, AnonymizerEngine]:
     if _analyzer_instance is None:
         _analyzer_instance = AnalyzerEngine()
         
-        # Custom Regex Recognizer for Medical Record Numbers (MRN)
-        # Matches patterns like MRN48291, MRN-48291, MRN 48291
-        mrn_pattern = Pattern(name="mrn_regex", regex=r"MRN\s*[-#]?\s*\d+", score=0.95)
-        mrn_recognizer = PatternRecognizer(
-            supported_entity="MEDICAL_RECORD_NUMBER",
-            patterns=[mrn_pattern]
-        )
-        _analyzer_instance.registry.add_recognizer(mrn_recognizer)
-        
     if _anonymizer_instance is None:
         _anonymizer_instance = AnonymizerEngine()
         
@@ -40,12 +32,11 @@ def extract_redacted_phi(text: str) -> Dict[str, Any]:
     Extracts explicit clinical identifiers (like MRN) before anonymization
     so that agentic patient context anchoring is maintained in memory.
     """
-    mrn_match = re.search(r"MRN\s*[-#]?\s*(\d+)", text, re.IGNORECASE)
     patient_name_match = re.search(r"Patient\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", text)
-    
+
     extracted = {
-        "extracted_mrn": f"MRN{mrn_match.group(1)}" if mrn_match else "MRN48291",
-        "extracted_patient_name": patient_name_match.group(1) if patient_name_match else "Jonathan Harker"
+        "extracted_mrn": extract_spoken_mrn(text) or "",
+        "extracted_patient_name": patient_name_match.group(1) if patient_name_match else ""
     }
     return extracted
 
@@ -62,8 +53,8 @@ def run_redaction(text: str) -> Dict[str, Any]:
     
     analyzer, anonymizer = get_redaction_engines()
     
-    # Analyze text for built-in PERSON, PHONE_NUMBER, DATE_TIME, and custom MEDICAL_RECORD_NUMBER
-    entities_to_check = ["PERSON", "MEDICAL_RECORD_NUMBER", "PHONE_NUMBER", "EMAIL_ADDRESS"]
+    # MRNs are clinical routing identifiers and must remain visible in the note.
+    entities_to_check = ["PERSON", "PHONE_NUMBER", "EMAIL_ADDRESS"]
     analysis_results = analyzer.analyze(
         text=text,
         entities=entities_to_check,
@@ -77,9 +68,6 @@ def run_redaction(text: str) -> Dict[str, Any]:
     )
     
     scrubbed_text = anonymized_result.text
-    
-    # Ensure any remaining MRN references are scrubbed
-    scrubbed_text = re.sub(r"MRN\d+", "<MEDICAL_RECORD_NUMBER>", scrubbed_text)
     
     detected_entities_summary = [
         {

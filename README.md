@@ -71,7 +71,7 @@ flowchart TD
 ```
 c:/Projects/ANA/
 ├── datasets/                            # Synthetic corpora & benchmark audio
-│   ├── MIMIC_IV_Trasncript.csv.xls      # Clinical note dataset
+│   ├── MIMIC_IV_Trasncript.csv.xls      # Local clinical note dataset (gitignored)
 │   ├── mock_audio.mp3                   # Inpatient ward simulated audio
 │   ├── segmented_audio.wav              # VAD-segmented speech audio
 │   └── mock_fhir_records.json           # Synthetic Smart-on-FHIR EHR database
@@ -172,6 +172,15 @@ Launch the primary clinical web interface for live voice recording and full 5-ti
 python run_ana_ui.py
 # Open your browser at: http://127.0.0.1:8080
 ```
+- Capture or upload audio, then speak the patient's MRN digit by digit in the same
+  utterance. A wristband barcode scanner can also populate the MRN field, but the
+  scanned value must match the MRN present in the transcript.
+- MRNs remain visible through privacy de-identification because they are required
+  for patient-context routing. Non-clinical or unanchored audio is quarantined.
+- Enter the submitting staff name. A separate **Text Entry** mode collects the
+  MRN first, then accepts clinical text and skips VAD/Whisper transcription.
+- A successful pipeline plays a success tone; quarantined or failed processing
+  plays an error tone.
 - **Live Sound Recording**: Record directly with your microphone (16 kHz PCM WAV + real-time oscilloscope waveform & VU decibel meter).
 - **Patient Context Anchoring**: Section 2.1 protocol enforces MRN declaration to eliminate multi-bed ward cross-talk.
 - **5-Tier Visual Output**: Step-by-step display of Silero-VAD segments, Whisper transcription, Verbal error rollback, Presidio scrubbed text, DART cards, HITL Checkpoint approval, Hybrid RAG search, FHIR MCP tools, and SHA-256 Ledger tamper detection.

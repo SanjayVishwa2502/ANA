@@ -35,6 +35,17 @@ class DARTNote(BaseModel):
     )
 
 
+def _has_clinical_content(text: str) -> bool:
+    text_lower = text.lower()
+    return any(
+        keyword in text_lower
+        for keyword in (
+            "patient", "vital", "pain", "medication", "oxygen", "ecg",
+            "heart", "blood pressure", "symptom", "administered",
+        )
+    )
+
+
 def extract_dart_rule_based(redacted_text: str) -> Dict[str, Any]:
     """
     Deterministically parses scrubbed clinical transcript into DART categories
@@ -69,17 +80,15 @@ def extract_dart_rule_based(redacted_text: str) -> Dict[str, Any]:
     if "ecg" in text_lower or "electrocardiogram" in text_lower:
         action_items.append("Stat ECG performed showing ST-segment elevation in leads V2-V4 (Anterior STEMI)")
         
-    # Extract Response
-    response_items.append("Initial evaluation logged; monitoring post-nitroglycerin and heparin bolus response")
-    
-    # Extract Teaching
-    teaching_items.append("Patient advised to remain still during STAT ECG and continuous oxygen delivery")
+    has_clinical_content = _has_clinical_content(redacted_text)
+
+    if has_clinical_content:
+        response_items.append("Initial evaluation logged; monitoring documented clinical response")
+        teaching_items.append("Patient education and follow-up plan require clinical review")
     
     # Default fallbacks if empty
-    if not data_items:
+    if not data_items and has_clinical_content:
         data_items.append(f"Clinical observation: {redacted_text[:120]}...")
-    if not action_items:
-        action_items.append("Standard supportive nursing care provided")
         
     # Confidence scoring logic:
     # High completeness across categories yields high score (>0.85)
@@ -90,7 +99,7 @@ def extract_dart_rule_based(redacted_text: str) -> Dict[str, Any]:
         (len(teaching_items) > 0)
     ) / 4.0
     
-    confidence = round(0.80 + (completeness * 0.16), 2)  # Typically 0.96 for complete DART
+    confidence = round(0.80 + (completeness * 0.16), 2) if has_clinical_content else 0.20
     requires_flag = confidence < 0.85
     
     return {
@@ -114,7 +123,7 @@ def format_to_dart_schema(redacted_text: str, force_low_confidence: bool = False
     
     # Check if OpenAI API key is available and valid
     api_key = os.getenv("OPENAI_API_KEY", "")
-    if api_key and not api_key.startswith("mock") and len(api_key) > 20:
+    if _has_clinical_content(redacted_text) and api_key and not api_key.startswith("mock") and len(api_key) > 20:
         try:
             from openai import OpenAI
             client = OpenAI(api_key=api_key)
@@ -149,8 +158,8 @@ def format_to_dart_schema(redacted_text: str, force_low_confidence: bool = False
     validated_dict = validated_note.model_dump()
     
     print("   --- Formatted DART Note ---")
-    print(f"   • Data ({len(validated_dict['data'])}): {validated_dict['data'][0]}")
-    print(f"   • Action ({len(validated_dict['action'])}): {validated_dict['action'][0]}")
+    print(f"   • Data ({len(validated_dict['data'])}): {validated_dict['data'][0] if validated_dict['data'] else 'None'}")
+    print(f"   • Action ({len(validated_dict['action'])}): {validated_dict['action'][0] if validated_dict['action'] else 'None'}")
     print(f"   • Confidence Score: {validated_dict['confidence_score']:.2f}")
     print(f"   • Requires Manual Flag (HITL): {validated_dict['requires_manual_flag']}")
     

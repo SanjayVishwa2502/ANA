@@ -28,7 +28,11 @@ def process_nurse_input(state: NurseAgentState) -> NurseAgentState:
         return state
         
     latest_msg = messages[-1].content
-    patient_id = state.get("patient_id", "MRN48291")
+    patient_id = state.get("patient_id", "").strip()
+    if not patient_id:
+        messages.append(AIMessage(content="Patient MRN is required before retrieving clinical context."))
+        state["messages"] = messages
+        return state
     print(f"\n[Tier 4 Agent Node] 🤖 Processing Nurse Query: '{latest_msg}' for Patient ID: {patient_id}")
     
     msg_lower = latest_msg.lower()

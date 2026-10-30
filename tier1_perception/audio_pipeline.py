@@ -9,6 +9,7 @@ import re
 import time
 import warnings
 from typing import Dict, List, Optional, Tuple, Any
+from mrn_utils import extract_spoken_mrn, normalize_mrn, transcript_contains_mrn
 
 # Windows console cp1252 UTF-8 safety
 if hasattr(sys.stdout, "reconfigure"):
@@ -17,15 +18,6 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 warnings.filterwarnings("ignore")
-
-FALLBACK_MOCK_TRANSCRIPT = (
-    "Patient Jonathan Harker, MRN48291. At 1400 hours, the patient became acutely diaphoretic "
-    "and tachypneic, complaining of severe retro-sternal chest pain radiating to the left jaw. "
-    "Vitals showed sinus tachycardia at 135 beats per minute, blood pressure 165 over 95, "
-    "and SPO2 dropping to 89% on room air. I immediately administered 10... wait, 0.4 milligrams "
-    "of sublingual nitroglycerin and started two liters of oxygen via nasal cannula, followed by "
-    "a 5,000 unit heparin bolus. Stat ECG shows ST segment elevation in leads V2 through V4."
-)
 
 def run_vad(file_path: str, output_path: str = "segmented_audio.wav") -> Tuple[str, List[Dict[str, int]]]:
     """
@@ -36,8 +28,8 @@ def run_vad(file_path: str, output_path: str = "segmented_audio.wav") -> Tuple[s
     speech_timestamps: List[Dict[str, int]] = []
     
     if not os.path.exists(file_path):
-        print(f"⚠️ Audio file not found at '{file_path}'. Using simulated acoustic segmenter.")
-        return file_path, [{"start": 0, "end": 160000}]
+        print(f"⚠️ Audio file not found at '{file_path}'. No speech segments produced.")
+        return file_path, []
 
     try:
         import torch
@@ -73,14 +65,15 @@ def run_vad(file_path: str, output_path: str = "segmented_audio.wav") -> Tuple[s
 def transcribe_audio(file_path: str, model_size: str = "base") -> str:
     """
     Transcribes segmented audio using OpenAI Whisper ASR.
-    Includes fallback transcription for deterministic pipeline demonstration.
+    Returns only the transcript produced by Whisper; failures are not replaced
+    with synthetic clinical content.
     """
     print(f"\n[Tier 1 Perception] 🔤 Transcribing '{file_path}' using Whisper '{model_size}'...")
     start_time = time.time()
     
     if not os.path.exists(file_path):
-        print(f"   ⚠️ Audio file '{file_path}' unavailable. Utilizing benchmark clinical speech corpus.")
-        return FALLBACK_MOCK_TRANSCRIPT
+        print(f"   ⚠️ Audio file '{file_path}' unavailable. No transcript produced.")
+        return ""
 
     try:
         import whisper
@@ -89,10 +82,10 @@ def transcribe_audio(file_path: str, model_size: str = "base") -> str:
         transcript = result.get("text", "").strip()
         elapsed = round(time.time() - start_time, 2)
         print(f"   ✅ ASR Transcription completed in {elapsed}s.")
-        return transcript if transcript else FALLBACK_MOCK_TRANSCRIPT
+        return transcript
     except Exception as e:
-        print(f"   ⚠️ Whisper local inference note ({e}). Using standard clinical ward benchmark transcript.")
-        return FALLBACK_MOCK_TRANSCRIPT
+        print(f"   ⚠️ Whisper local inference failed ({e}). No transcript produced.")
+        return ""
 
 
 def verbal_error_recovery(transcript: str) -> Tuple[str, List[Dict[str, str]]]:
@@ -142,13 +135,14 @@ def verify_patient_context_anchoring(transcript: str, declared_mrn: Optional[str
     Tier 1 Patient Context Anchoring Protocol (Methodology Redraft Section 2.1):
     Prevents acoustic cross-talk in multi-bed rooms.
     Verifies that the audio utterance contains an explicit patient identifier declaration
-    (e.g., 'MRN48291' or verbal patient name), or matches the nurse's bedside wristband anchor.
+    (e.g., 'MRN48291' or digit-by-digit MRN speech). A scanner value can
+    provide a second factor, but the same MRN must still occur in the transcript.
     If unanchored, the fail-safe flags cross-talk risk.
     """
-    mrn_match = re.search(r"MRN\s*[-#]?\s*(\d+)", transcript, re.IGNORECASE)
-    voice_mrn = f"MRN{mrn_match.group(1)}" if mrn_match else None
-    
-    clean_declared = declared_mrn.strip().upper() if declared_mrn else None
+    voice_mrn = extract_spoken_mrn(transcript)
+    clean_declared = normalize_mrn(declared_mrn)
+    if not voice_mrn and clean_declared and transcript_contains_mrn(transcript, clean_declared):
+        voice_mrn = clean_declared
     
     if voice_mrn and clean_declared:
         if voice_mrn == clean_declared:
@@ -160,10 +154,10 @@ def verify_patient_context_anchoring(transcript: str, declared_mrn: Optional[str
             }
         else:
             return {
-                "anchored": True,
-                "anchored_mrn": voice_mrn,
-                "source": "voice_override",
-                "details": f"Voice declaration ({voice_mrn}) took precedence over bedside selector ({clean_declared})."
+                "anchored": False,
+                "anchored_mrn": "UNKNOWN",
+                "source": "mrn_mismatch",
+                "details": f"MRN mismatch: transcript declares {voice_mrn}, but scanner supplied {clean_declared}. Audio quarantined."
             }
     elif voice_mrn:
         return {
@@ -174,10 +168,10 @@ def verify_patient_context_anchoring(transcript: str, declared_mrn: Optional[str
         }
     elif clean_declared:
         return {
-            "anchored": True,
-            "anchored_mrn": clean_declared,
-            "source": "bedside_wristband",
-            "details": f"Patient Context anchored via Bedside Station / Wristband Scan ({clean_declared})."
+            "anchored": False,
+            "anchored_mrn": "UNKNOWN",
+            "source": "scanner_without_voice_mrn",
+            "details": f"Scanner supplied {clean_declared}, but the MRN was not spoken in the transcript. Audio quarantined."
         }
     else:
         # Failsafe drop: No patient identifier detected in voice or bedside station
@@ -185,7 +179,7 @@ def verify_patient_context_anchoring(transcript: str, declared_mrn: Optional[str
             "anchored": False,
             "anchored_mrn": "UNKNOWN",
             "source": "unanchored",
-            "details": "🚨 PATIENT CONTEXT ANCHORING FAILED: No explicit MRN declared in voice or bedside terminal. Audio quarantined to avoid multi-bed ward cross-talk."
+            "details": "🚨 PATIENT CONTEXT ANCHORING FAILED: Speak the MRN digit by digit or scan the wristband and also speak the same MRN. Audio quarantined."
         }
 
 
@@ -198,22 +192,7 @@ def run_perception_pipeline(audio_file_path: Optional[str] = None, declared_mrn:
     print("🎙️ TIER 1: MULTIMODAL PERCEPTION & ACOUSTIC INGESTION")
     print("=======================================================")
     
-    target_audio = audio_file_path
-    if not target_audio or not os.path.exists(target_audio):
-        # Check standard default locations
-        candidates = [
-            "datasets/mock_audio.mp3",
-            "mock_audio.mp3",
-            "datasets/mock_audio.wav",
-            "mock_audio.wav"
-        ]
-        for c in candidates:
-            if os.path.exists(c):
-                target_audio = c
-                break
-                
-    if not target_audio:
-        target_audio = "datasets/mock_audio.mp3"
+    target_audio = audio_file_path or ""
         
     # Step 1.1: VAD Segmentation
     segmented_path, timestamps = run_vad(target_audio, "datasets/segmented_audio.wav")
